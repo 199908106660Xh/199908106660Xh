@@ -1,0 +1,236 @@
+这里是main里面的JPL函数，以下是关于JPLd的MATLAB代码
+%%  JPL 算法
+  %输入  orderMatrix  订单信息，包括激活时间，配送点位置坐标，重量，编号
+  %          oril   车辆初始点坐标，后面不断更新
+  %          v      配送员行驶速度
+  %          c      配送员容量
+  %输出   serrout   配送路径，包括实际配送的配送点位置坐标，配送点位置编号
+  %         sertime   配送时间
+  %         obj          目标函数，所有配送时间
+  function [serrout, sertime,obj]=JPL(orderMatrix,oril,v)
+  reqnum=size(orderMatrix,1);% 获取订单数量
+  obj=0;% 初始化目标函数值
+  c = 50;
+  yc=25;
+% 将未服务的订单矩阵（orderMatrix）赋值给变量unserset,保留原始订单矩阵的信息
+unserset=orderMatrix; 
+serrout=[oril 1];   %最终服务的位置顺序
+sertime = zeros(reqnum, 1); % 订单服务完毕的时间
+
+t=0;   % 在 t=0 时车辆位于原点且载重为0，如果有订单激活就立即拾取
+currentLoad = 0; % 当前载重量
+cumulativeWeigh = 0;  % 初始化服务时间和重量乘积的累积和
+serset=[];%存储正在配送的订单，n行5列
+while ~isempty(unserset)||~isempty(sersettsp)
+    %% 不同情形下捡取的订单重量不大于c
+ t=max(t,min(unserset(:,1)));    %当前还没需求点释放时，就直接跳到需求点最小释放时间
+ reqin=find(unserset(:,1)<=t);    % reqin是一个逻辑索引向量，找激活时间小于等于当前时间点的订单索引
+ if sum(reqin)<=c       
+     %当激活订单数的总重量不大于c时，拣取所有激活的订单
+             serset=[serset;unserset(reqin,:)];       %将未服务的reqin行订单加入正在服务的订单集合
+             unserset(reqin,:)=[];       % 从未服务的订单集合unserset中删除reqin行订单
+             currentLoad = sum(serset(:, 4));
+    %计算从原点出发时间
+    if currentLoad >= yc  % 如果当前负载大于预设阈值 yc
+               t = max(unserset(reqin, 1));
+    else  %当前载重 currentLoad 小于阈值 yc，则继续计算以决定是否出发。
+             %%t=0时除外，因为载重不满足出发条件，要等到满足最小时间：currentLoad > yc || t > minDistance / v
+             %%找满足条件的值，求离开原点的t
+             sersetd=zeros(size(serset,1),1);  %找出最远的距离，用来判断出发的值t，serset行1列
+               for i=1:size(serset,1)  
+                sersetd(i)=((serset(i,2))^2+(serset(i,3))^2)^0.5;        
+               end
+            sersetWithDistances = [serset, sersetd];
+            sortedSersetByDistances = sortrows(sersetWithDistances, size(sersetWithDistances, 2));%size(sersetWithDistances, 2)是在请求sersetWithDistances的列维数x，sortrows会对sersetWithDistances的第x列从小到大排序
+            maxDistanceOrder = sortedSersetByDistances(1, :);  %找距离最远的一行数据
+            maxDistance = maxDistanceOrder(end); % 获取最近订单的距离值
+           if t == 0 || t >=maxDistance / v    %对应论文里面的t≥|τ'|
+              t=max(unserset(reqin, 1));
+           else
+           % 考虑在时间t到 maxDistance/v 期间是否有新订单释放，如果没有，则车辆等到maxDistance/v再执行后面的程序；如果有，看载重量会不会超，不会超，出发时间同前，如果超，出发时间则是按照时间顺序满足yc的需求点的释放时间
+           additionalLoad = 0;  % 新增的订单重量
+           for i = 1:size(unserset, 1)
+                if unserset(i, 1) > t && unserset(i, 1) <= maxDistance / v % 判断订单是否在时间t到 maxDistance/v 之间释放
+                   additionalLoad = additionalLoad + unserset(i, 4);
+                   % 计算当前订单与原点的距离
+                   currentOrderDistance = sqrt(unserset(i, 2)^2 + unserset(i, 3)^2);
+                   %如果当前订单的距离大于maxDistance，则更新maxDistance
+                   if currentOrderDistance > maxDistance  %if 距离和后面的载重是并行关系，满足其一即可跳出while循环
+                      maxDistance = currentOrderDistance;
+                      % 检查更新后的maxDistance是否满足出发条件
+                      if t > maxDistance / v 
+                          t = unserset(i, 1);  % 设置出发时间为这个需求点的释放时间
+                          currentLoad = currentLoad + additionalLoad;
+                          serset = [serset; unserset(i, :)]; 
+                          unserset(i, :) = []; 
+                           break; % 立即结束for循环，因为可以出发。跳出循环前，更新t，currentLoad，serset，unserset
+                      end
+                   end   %距离这个不太成立
+                    if currentLoad + additionalLoad >= yc && currentLoad + additionalLoad <= c
+                       % 如果新增订单使载重超过yc，则设置出发时间为当前订单的释放时间
+                       t = unserset(i, 1);
+                       currentLoad = currentLoad + additionalLoad;
+                       serset = [serset; unserset(i, :)]; 
+                       unserset(i, :) = []; 
+                       break;  % 跳出当前循环，确保新值被使用
+                   end
+                       % 如果没有一个 if 块中的 continue 被调用，更新当前载重
+                       currentLoad = currentLoad + additionalLoad;  
+                else %这个时间段没有新需求，
+                  t = maxDistance / v;  %这段时间内没有需求释放，出发时间为maxDistance / v
+                    break; %结束for循环
+                end
+            end
+       end       
+    end
+ else 
+    %当激活的订单总重量大于c时，捡取距离原点最近的总重量小于c的订单
+    unsersetd=zeros(size(unserset,1),1);
+    for i=1:size(unserset,1)
+        unsersetd(i)=((unserset(i,2))^2+(unserset(i,3))^2)^0.5;        
+    end
+    % 初始化一个临时数组来存储已激活订单及其距离
+    temporaryOrders = [unserset(reqin,:), unsersetd(reqin)];   
+    % 增加的一列 temporarydOrders(:, end)反映了距离
+    [~, sortIdx] = sort( temporaryOrders(:, end));    
+    sortedTemporaryOrders = temporaryOrders(sortIdx, :);
+    removeIdx = [];    % 初始化一个数组来记录需要移除的订单索引
+    sersetAdditions = [];   % 初始化需要移动到 serset 的订单
+    % 遍历排序后的订单，累积重量，并拣取相应的订单
+        for i = 1:size(sortedTemporaryOrders, 1)
+         if currentLoad + sortedTemporaryOrders(i, 4) <= c
+            % 可以拣取当前订单
+            currentLoad = currentLoad + sortedTemporaryOrders(i, 4);
+            sersetAdditions = [sersetAdditions; sortedTemporaryOrders(i, 1:5)]; 
+            removeIdx = [removeIdx; sortIdx(i)];  % 记录移除索引
+        else
+                break; % 如果加上当前订单就超重，停止选单
+         end
+        end   
+      % 根据索引拣取订单更新服务集和未服务集
+      serset = [serset; sersetAdditions];
+        unserset(removeIdx, :) = [];
+ end
+     sersettsp=Tsp(serset,oril,v);    %调用Tsp函数求解服务订单的路径
+     leavel=oril;      %刚离开的点
+     sersett=t+sersettsp(:,5); 
+    % 假设 sersettsp 有服务需求点的信息，sersettsp(i,:) 表示当前服务的需求点信息
+    % 假设 sersett 是服务时间信息，sersett(i,1) 表示当前需求点的服务时间
+     for i = 1:size(sersettsp, 1)
+        % 更新车辆到达需求点的时间
+        arrivalTime = sersett(i); % 记录车辆到达该点的时间
+        
+        % 获得当前需求点的货物重量
+        currentOrderWeight = sersettsp(i, 4); % 假设第4列是需求点的货物重量
+        
+        % 计算时间与重量的乘积并累加到 cumulativeWeightTime
+        cumulativeWeigh = cumulativeWeigh + (arrivalTime -unserset(i, 1)) * currentOrderWeight;
+        
+        % 更新车辆当前的载重量，反映已经服务完毕后减去的重量
+        currentLoad = currentLoad - currentOrderWeight;
+     end
+    while ~isempty(sersettsp)  % 确保还有需求点需要服务
+        flag=0;
+           for i = 1:size(sersettsp, 1) % 遍历所有服务点
+              if currentLoad < c  % 到达某点，出现当前拾取订单的总重量是否小于配送员的最大载重 c
+               t_current = t + sersettsp(i,5); % 计算当前车辆完成服务的时间
+               [newactin, ~] = find(unserset(:,1) < t_current);
+                newactnum=size(newactin,1);
+                diso = sqrt(sersettsp(i, 2))^2 +  sersettsp(i, 3)^2;
+              if newactnum>=1         %有订单被激活
+        % 获取新激活订单的距离
+        newactind = sqrt((unserset(newactin,2) ).^2 + (unserset(newactin,3) ).^2);
+        % 将索引和距离合并为一个表
+        activatedOrders = [newactin, newactind];
+        % 按照距离排序
+        [~, order] = sort(activatedOrders(:,2));
+        % 根据排序顺序重新排列索引
+        sortedIndexes = activatedOrders(order, 1);
+        % 遍历排序后的订单 
+        considernum = 0; % 初始化可考虑的订单数量为0   
+        tempOrders = [];% 初始化临时集合来存储可考虑的新订单
+        toRemove = []; % 初始化一个空数组来存储将要删除的元素的索引
+       adtotalorderWeight=0;
+        for j = 1:length(sortedIndexes)  %服务完某点时，寻找在原点可以考虑拾取的订单
+            idx = sortedIndexes(j);
+            orderWeight = unserset(idx, 4); % 订单的重量
+            if (currentLoad + adtotalorderWeight + orderWeight <= c)   %remainingWeight，保存原始的订单索引
+                tempOrders = [tempOrders; unserset(idx, :)]; 
+                adtotalorderWeight = adtotalorderWeight + orderWeight;  
+                considernum = considernum + 1;    % 增加可考虑的订单计数
+                % 不直接删除unserset中的元素，而是将它们的索引放入toRemove数组中
+                toRemove(end + 1) = idx;
+            else
+                break; %如果加上当前订单会超重，则停止选择订单，并跳出for循环，继续服务下一个，就是执行下个if flag==0
+            end
+        end  %这个循环只是假设拾取的状态，但是车辆的载重是不变的
+            % 循环结束后所有订单遴选完成后，在循环外统一更新车辆的当前载重
+           % serset = [serset; tempOrders];
+           % currentLoad = currentLoad + totalorderWeight;     
+            for z = length(toRemove):-1:1
+                unserset(toRemove(z), :) = [];
+            end
+            %进一步比较是否返回原点，得出结论要返回才更新车辆载重和serset
+            for k=1:considernum     
+                retreq=[serset;unserset(1:k,:)];    %当前服务订单和可能服务的未来订单的合并列表。
+                t=t_current+diso/v; %返回原点的时间
+                rettsp=Tsp(retreq,oril,v);
+               %判断是否返回原点取货
+                    %配送员到原点的距离
+                    serverlo=((sersettsp(i, 2))^2+(sersettsp(i, 3))^2)^0.5;
+                    %返回取货增加的目标函数值-当决定返回原点, 增加的目标值计算中应该包含返回途中的时间与重量累乘
+                    recumulativeWeight = currentLoad * serverlo/v;
+                      if  recumulativeWeight + cumulativeWeigh + rettsp(end, 5) <sersettsp(end, 5)
+                        flag=1;%标识需要返回原点，如果flag==0，继续前进服务下一个点,是for i = 1:size(sersettsp, 1)的循环
+                        break;%结束最内层的for循环
+                      end
+            end
+            if flag == 1  %对应上面flag=1;%标识需要返回原点
+               t=t_current+diso/v;%返回原点的时间
+               serset = [serset; tempOrders];
+                unserset(toRemove, :) = [];
+              sersettsp=Tsp(serset,oril,v);
+            else
+            t=sersett(1);
+            obj=obj+sersett(1);% 更新当前时间到服务该点的时间
+            currentOrderWeight = sersettsp(1, 4); % 假设这是当前服务的订单的重量
+            % 更新车辆当前的载重量，反映已经服务完毕后减去的重量
+            cumulativeWeigh = cumulativeWeigh + t * currentOrderWeight;
+            serrout=[serrout;sersettsp(1,2:4)];     %服务的目标点顺序
+            sertime=[sertime;t];         %服务各点的时间
+            % 更新载重(currentLoad = currentLoad - 该需求点的重量)
+            currentLoad = currentLoad - currentOrderWeight;
+            leavel=sersettsp(1,2:3);            
+            % 删除已经服务的订单逻辑保持不变
+            [same,reqservered,o]=intersect(serset,sersettsp(1,1:4),'rows');
+            serset(reqservered,:)=[];       %删除serset中已经服务的点
+            sersettsp(1,:)=[];       %删除已经服务的点
+            sersett(1,:)=[];
+            end
+         else 
+            t=sersett(1);
+            obj=obj+sersett(1);% 更新当前时间到服务该点的时间
+            currentOrderWeight = sersettsp(1, 4); % 假设这是当前服务的订单的重量
+            % 更新车辆当前的载重量，反映已经服务完毕后减去的重量
+            cumulativeWeigh = cumulativeWeigh + t * currentOrderWeight;
+            serrout=[serrout;sersettsp(1,2:4)];     %服务的目标点顺序
+            sertime=[sertime;t];         %服务各点的时间
+            % 更新载重(currentLoad = currentLoad - 该需求点的重量)
+            currentLoad = currentLoad - currentOrderWeight;
+            leavel=sersettsp(1,2:3);            
+            % 删除已经服务的订单逻辑保持不变
+            [same,reqservered,o]=intersect(serset,sersettsp(1,1:4),'rows');
+            serset(reqservered,:)=[];       %删除serset中已经服务的点
+            sersettsp(1,:)=[];       %删除已经服务的点
+            sersett(1,:)=[];
+           end
+       end
+       end
+    if flag==0    %属于while循环，处理在所有订单服务完成后的情况
+        serrout=[serrout;[oril 1]];     %服务的目标点顺序
+        sertime=[sertime;t];         %服务各点的时间
+
+    end
+end
+    end
+  end
