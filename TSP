@@ -1,0 +1,29 @@
+ %% 用穷举法求开放的TSP
+ %输入   serset  订单激活时间和坐标集合
+ %输出   sersettsp  经过tsp排序的订单激活时间、坐标、订单位置编号、到达时间
+function sersettsp=Tsp(serset,oril,v)
+sersetl=[serset(:,2),serset(:,3)];   %提取 serset 中所有订单的坐标，并将它们存入 sersetl 矩阵
+        sersetlo=[oril;sersetl];    %添加起始点坐标 oril，形成一个新的点集合，包括起始点和所有订单点
+        m=size(sersetlo,1);
+        sersetd=Distance(sersetlo);  %计算点集间两两之间的距离矩阵
+        path=perms(2:1:m);   %从点集的第二个元素开始的排列
+        pathnum=size(path,1);  %获取可行路径的总数。
+        path=[ones(pathnum,1),path]; %在每个路径排列的前面添加起始点（代表为 1），因为所有路径都是从起始点开始的
+        pathd=zeros(pathnum,1);  %存储每条路径的总距离
+        for i=1:pathnum
+            for j=1:m-1
+                pathd(i)=pathd(i)+sersetd(path(i,j),path(i,j+1));
+            end
+        end
+        tspl=min(pathd);
+        tspin=find(pathd==tspl);
+        tsp=path(tspin,:);
+        tsp=tsp(1,:);
+        arrt=zeros(m,1);
+        sersettsp=zeros(m-1,5);       %带有到达时间的服务订单顺序集合,第5列为到达时间
+        %计算最短路径中每个点的到达时间并更新 sersettsp 矩阵。这里，每个点的到达时间是基于前一个点的到达时间加上从前一个点到当前点的距离除以速度计算的
+        for i=2:m
+            arrt(i)=arrt(i-1)+(sersetd(tsp(i-1),tsp(i)))/v;
+            sersettsp(i-1,1:5)=serset(tsp(i)-1,:);
+            sersettsp(i-1,5)=arrt(i);
+        end
